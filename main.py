@@ -1,49 +1,40 @@
-from database_manager import DatabaseManager
-from redundancy_checker import RedundancyChecker
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from chatbot import Chatbot
 
-def process_data(data_list):
-    db = DatabaseManager()
-    checker = RedundancyChecker()
+app = FastAPI()
 
-    print(f"{'Data Content':<40} | {'Status':<15} | {'Message'}")
-    print("-" * 80)
+# Allow CORS for frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify the exact origin
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    for data in data_list:
-        data_hash = checker.generate_hash(data)
-        
-        # Step 1: Identification
-        if checker.is_redundant(db, data_hash):
-            status = "REDUNDANT"
-            message = "Duplicate detected. Skipped."
-        else:
-            # Step 2: Validation & Insertion
-            status = "VERIFIED"
-            success = db.add_entry(str(data), data_hash)
-            if success:
-                message = "Added to database."
-            else:
-                status = "ERROR"
-                message = "Failed to add."
+chatbot = Chatbot()
 
-        print(f"{str(data)[:37] + '...':<40} | {status:<15} | {message}")
+class ChatRequest(BaseModel):
+    message: str
+
+class ChatResponse(BaseModel):
+    response: str
+
+@app.get("/")
+def read_root():
+    return {"status": "Chatbot Backend is running"}
+
+@app.post("/chat", response_model=ChatResponse)
+def chat_endpoint(request: ChatRequest):
+    user_message = request.message
+    if not user_message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    
+    bot_reply = chatbot.get_response(user_message)
+    return ChatResponse(response=bot_reply)
 
 if __name__ == "__main__":
-    # Sample Test Data
-    sample_data = [
-        "User: Alice, ID: 101",
-        "User: Bob, ID: 102",
-        "User: Alice, ID: 101", # Duplicate
-        "User: Charlie, ID: 103",
-        {"name": "David", "id": 104},
-        {"name": "David", "id": 104} # Duplicate Dict
-    ]
-
-    print("Processing Sample Data...")
-    process_data(sample_data)
-    
-    print("\nFinal Database State:")
-    db = DatabaseManager()
-    entries = db.get_all_entries()
-    print(f"Total Entries: {len(entries)}")
-    for row in entries:
-        print(f"ID: {row[0]}, Content: {row[1]}")
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
